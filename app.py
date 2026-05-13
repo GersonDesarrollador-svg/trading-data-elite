@@ -2,8 +2,31 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import os
-import csv
+import requests
+import json
 from datetime import datetime
+
+# CONFIGURACIÓN SUPABASE
+SUPABASE_URL = "https://ujurmsvhlmtncuhabwkr.supabase.co"
+SUPABASE_KEY = "sb_publishable_joBF5glo4cmQofaeQ3gNNA__ByU6sxM"
+HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=minimal"
+}
+
+def guardar_trade(data):
+    url = f"{SUPABASE_URL}/rest/v1/trades"
+    response = requests.post(url, headers=HEADERS, json=data)
+    return response.status_code in [200, 201]
+
+def obtener_trades():
+    url = f"{SUPABASE_URL}/rest/v1/trades?select=*&order=created_at.desc"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code == 200:
+        return response.json()
+    return []
 
 st.set_page_config(
     page_title="Trading Elite — Sistema de Data",
@@ -52,41 +75,8 @@ st.markdown("""
         padding: 12px;
     }
     .stButton > button:hover { background: #4DA6FF; }
-    div[data-testid="stForm"] {
-        background: #0D1B2A;
-        border: 1px solid #1E3A5F;
-        border-radius: 12px;
-        padding: 20px;
-    }
-    .stSelectbox label, .stTextInput label, .stTextArea label {
-        color: #5B8DB8 !important;
-        font-size: 12px !important;
-    }
-    .stSelectbox > div > div, .stTextInput > div > div > input, .stTextArea > div > div > textarea {
-        background: #12121a !important;
-        border: 1px solid #2a2a3a !important;
-        color: #e0e0e0 !important;
-        border-radius: 7px !important;
-    }
 </style>
 """, unsafe_allow_html=True)
-
-# ARCHIVO DE TRADES
-ARCHIVO = "data/trades.csv"
-COLUMNAS = [
-    "fecha","activo","direccion","entrada","stop_loss","take_profit",
-    "resultado","rr_obtenido","setup","sesion",
-    "ley_ema","ley_cierre","ley_espacio","ley_scanner","ley_stop",
-    "emocional","notas"
-]
-
-if not os.path.exists("data"):
-    os.makedirs("data")
-
-if not os.path.exists(ARCHIVO):
-    with open(ARCHIVO, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(COLUMNAS)
 
 # MENÚ LATERAL
 st.sidebar.markdown("""
@@ -110,7 +100,7 @@ border:1px solid #1E3A5F;font-size:11px;color:#5B8DB8;">
 </div>
 """, unsafe_allow_html=True)
 
-# ==================== PÁGINA INICIO ====================
+# ==================== INICIO ====================
 if pagina == "🏠 Inicio":
     st.markdown("""
     <div style="background:linear-gradient(135deg,#0D1B2A,#1B2B3B);border:1px solid #1E3A5F;
@@ -132,9 +122,6 @@ if pagina == "🏠 Inicio":
             <div style="font-size:12px;color:#5B8DB8;">Registra cada operación con las 5 leyes</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Ir al Diario", key="btn_diario"):
-            st.session_state["navegacion"] = "📓 Diario de Trades"
-            st.rerun()
 
     with col2:
         st.markdown("""
@@ -145,9 +132,6 @@ if pagina == "🏠 Inicio":
             <div style="font-size:12px;color:#5B8DB8;">Visualiza tus estadísticas en tiempo real</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Ir al Dashboard", key="btn_dashboard"):
-            st.session_state["navegacion"] = "📊 Dashboard"
-            st.rerun()
 
     with col3:
         st.markdown("""
@@ -158,11 +142,8 @@ if pagina == "🏠 Inicio":
             <div style="font-size:12px;color:#5B8DB8;">Prueba tu estrategia contra datos históricos</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Ir al Backtesting", key="btn_backtesting"):
-            st.session_state["navegacion"] = "🔬 Backtesting"
-            st.rerun()
 
-# ==================== DIARIO DE TRADES ====================
+# ==================== DIARIO ====================
 elif pagina == "📓 Diario de Trades":
     st.markdown("""
     <div style="background:linear-gradient(135deg,#0D1B2A,#1B2B3B);border:1px solid #1E3A5F;
@@ -175,9 +156,7 @@ elif pagina == "📓 Diario de Trades":
     with st.form("form_trade", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            activo = st.selectbox("Activo", [
-                "XAUUSD (Oro) M5", "Nasdaq NQ M1", "Nasdaq MNQ M1"
-            ])
+            activo = st.selectbox("Activo", ["XAUUSD (Oro) M5", "Nasdaq NQ M1", "Nasdaq MNQ M1"])
         with col2:
             direccion = st.selectbox("Dirección", ["Long", "Short"])
 
@@ -199,57 +178,63 @@ elif pagina == "📓 Diario de Trades":
         col8, col9 = st.columns(2)
         with col8:
             setup = st.selectbox("Setup principal", [
-                "Fibo 38.2% + EMA 200",
-                "Fibo 50% + EMA 200",
-                "Fibo 61.8% + EMA 200",
-                "Scanner IA + Rechazo Vela",
-                "Fibo 61.8% + Scanner IA",
-                "Fibo 78.6% + Trampa Liquidez",
-                "Orden Limitada 61.8%",
-                "Otro"
+                "Fibo 38.2% + EMA 200", "Fibo 50% + EMA 200",
+                "Fibo 61.8% + EMA 200", "Scanner IA + Rechazo Vela",
+                "Fibo 61.8% + Scanner IA", "Fibo 78.6% + Trampa Liquidez",
+                "Orden Limitada 61.8%", "Otro"
             ])
         with col9:
             sesion = st.selectbox("Sesión", [
-                "NY Open 9:30-10:30",
-                "NY Mid 10:30-11:00",
-                "London",
-                "New York",
-                "Asia"
+                "NY Open 9:30-10:30", "NY Mid 10:30-11:00",
+                "London", "New York", "Asia"
             ])
 
         st.markdown("**Checklist — Las 5 Leyes**")
-
-        ley_ema = st.selectbox("Ley 1 — EMA 200",
-            ["SI — precio del lado correcto", "NO — violé esta ley"])
-        ley_cierre = st.selectbox("Ley 2 — Cierre de vela",
-            ["SI — esperé el cierre", "NO — entré antes del cierre"])
-        ley_espacio = st.selectbox("Ley 3 — Zona Fibonacci válida",
-            ["SI — había confluencia Fibo", "NO — precio estaba en el aire"])
-        ley_scanner = st.selectbox("Ley 4 — Flecha del Scanner IA",
-            ["SI — flecha confirmada", "NO — entré sin señal"])
-        ley_stop = st.selectbox("Ley 5 — Stop Loss colocado",
-            ["SI — SL en el fractal", "NO — operé sin SL"])
+        ley_ema = st.selectbox("Ley 1 — EMA 200", ["SI", "NO"])
+        ley_cierre = st.selectbox("Ley 2 — Cierre de vela", ["SI", "NO"])
+        ley_espacio = st.selectbox("Ley 3 — Zona Fibonacci válida", ["SI", "NO"])
+        ley_scanner = st.selectbox("Ley 4 — Flecha del Scanner IA", ["SI", "NO"])
+        ley_stop = st.selectbox("Ley 5 — Stop Loss colocado", ["SI", "NO"])
 
         emocional = st.selectbox("Estado emocional", [
             "Confiado", "Neutral", "Ansioso", "FOMO", "Revenge"
         ])
-        notas = st.text_area("Notas del trade",
-            placeholder="¿Qué confluencias viste? ¿Qué mejorarías?")
+        notas = st.text_area("Notas del trade", placeholder="¿Qué confluencias viste?")
 
         guardar = st.form_submit_button("💾 Guardar Trade")
 
         if guardar:
             if entrada and stop_loss and take_profit and resultado and rr_obtenido:
-                fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
-                with open(ARCHIVO, "a", newline="", encoding="utf-8") as f:
-                    writer = csv.writer(f)
-                    writer.writerow([
-                        fecha, activo, direccion, entrada, stop_loss,
-                        take_profit, resultado, rr_obtenido, setup, sesion,
-                        ley_ema, ley_cierre, ley_espacio, ley_scanner,
-                        ley_stop, emocional, notas
-                    ])
-                st.success(f"✅ Trade guardado correctamente — {fecha}")
+                try:
+                    resultado_num = float(str(resultado).replace("+","").replace(",","."))
+                    rr_num = float(str(rr_obtenido).replace(",","."))
+                except:
+                    st.error("El resultado y R:R deben ser números.")
+                    st.stop()
+
+                data = {
+                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "activo": activo,
+                    "direccion": direccion,
+                    "entrada": entrada,
+                    "stop_loss": stop_loss,
+                    "take_profit": take_profit,
+                    "resultado": resultado_num,
+                    "rr_obtenido": rr_num,
+                    "setup": setup,
+                    "sesion": sesion,
+                    "ley_ema": ley_ema,
+                    "ley_cierre": ley_cierre,
+                    "ley_espacio": ley_espacio,
+                    "ley_scanner": ley_scanner,
+                    "ley_stop": ley_stop,
+                    "emocional": emocional,
+                    "notas": notas
+                }
+                if guardar_trade(data):
+                    st.success(f"✅ Trade guardado correctamente — {data['fecha']}")
+                else:
+                    st.error("❌ Error al guardar. Verifica la conexión.")
             else:
                 st.error("Por favor completa todos los campos obligatorios.")
 
@@ -261,45 +246,32 @@ elif pagina == "📊 Dashboard":
     justify-content:space-between;align-items:center;">
         <div>
             <div style="font-size:22px;font-weight:700;color:#E8F4FD;">📊 Trading Dashboard — Elite</div>
-            <div style="font-size:12px;color:#5B8DB8;margin-top:3px;">
-            XAUUSD · Nasdaq NQ/MNQ · Scanner IA + Fibonacci Pro</div>
+            <div style="font-size:12px;color:#5B8DB8;margin-top:3px;">XAUUSD · Nasdaq NQ/MNQ · Scanner IA + Fibonacci Pro</div>
         </div>
         <div style="background:#0F3460;color:#4DA6FF;font-size:11px;font-weight:600;
         padding:5px 12px;border-radius:20px;border:1px solid #1E5A9C;">LIVE TRACKING</div>
     </div>
     """, unsafe_allow_html=True)
 
-    if not os.path.exists(ARCHIVO):
-        st.warning("⚠️ Aún no tienes trades registrados.")
+    trades = obtener_trades()
+
+    if not trades:
+        st.warning("⚠️ Aún no tienes trades registrados. Ve al Diario y registra tu primer trade.")
         st.stop()
 
-    try:
-        df = pd.read_csv(ARCHIVO, names=COLUMNAS, skiprows=1, encoding="utf-8")
-    except Exception:
-        df = pd.read_csv(ARCHIVO, names=COLUMNAS, skiprows=1, encoding="latin-1")
-
-    if len(df) == 0:
-        st.warning("⚠️ Aún no tienes trades registrados.")
-        st.stop()
-
-    def limpiar(v):
-        try:
-            return float(str(v).strip().replace("+","").replace(",","."))
-        except:
-            return 0.0
-
-    df["resultado_num"] = df["resultado"].apply(limpiar)
-    df["rr_num"] = df["rr_obtenido"].apply(limpiar)
-    df["win"] = df["resultado_num"] > 0
+    df = pd.DataFrame(trades)
+    df["resultado"] = pd.to_numeric(df["resultado"], errors="coerce").fillna(0)
+    df["rr_obtenido"] = pd.to_numeric(df["rr_obtenido"], errors="coerce").fillna(0)
+    df["win"] = df["resultado"] > 0
 
     total = len(df)
     wins = int(df["win"].sum())
     losses = total - wins
     winrate = (wins / total * 100) if total > 0 else 0
-    ganancia_total = df["resultado_num"].sum()
-    rr_promedio = df["rr_num"].mean()
-    mejor_trade = df["resultado_num"].max()
-    peor_trade = df["resultado_num"].min()
+    ganancia_total = df["resultado"].sum()
+    rr_promedio = df["rr_obtenido"].mean()
+    mejor_trade = df["resultado"].max()
+    peor_trade = df["resultado"].min()
     expectativa = (winrate/100 * rr_promedio) - ((1 - winrate/100) * 1)
 
     col1,col2,col3,col4,col5 = st.columns(5)
@@ -318,7 +290,7 @@ elif pagina == "📊 Dashboard":
     with col9: st.metric("📉 Perdedores", losses)
     with col10: st.metric("🔥 Total", total)
 
-    df["acumulado"] = df["resultado_num"].cumsum()
+    df["acumulado"] = df["resultado"].cumsum()
     fig1 = go.Figure()
     fig1.add_trace(go.Scatter(
         x=list(range(1, len(df)+1)), y=df["acumulado"],
@@ -328,8 +300,7 @@ elif pagina == "📊 Dashboard":
         fill="tozeroy", fillcolor="rgba(77,166,255,0.08)"
     ))
     fig1.update_layout(
-        title=dict(text="Curva de Capital Acumulada",
-                  font=dict(size=13, color="#E8F4FD"), x=0),
+        title=dict(text="Curva de Capital Acumulada", font=dict(size=13, color="#E8F4FD"), x=0),
         paper_bgcolor="#0D1B2A", plot_bgcolor="#080C14",
         font=dict(color="#5B8DB8", family="Inter"),
         xaxis=dict(title="Trade #", gridcolor="#1A2E42", linecolor="#1E3A5F"),
@@ -340,80 +311,77 @@ elif pagina == "📊 Dashboard":
 
     col_a, col_b = st.columns(2)
     with col_a:
-        setup_stats = df.groupby("setup")["win"].agg(["sum","count"])
-        setup_stats["winrate"] = (setup_stats["sum"]/setup_stats["count"]*100).round(1)
-        setup_stats = setup_stats.reset_index()
-        fig2 = go.Figure(go.Bar(
-            x=setup_stats["setup"], y=setup_stats["winrate"],
-            marker=dict(color=setup_stats["winrate"],
-                       colorscale=[[0,"#FF4D6D"],[0.5,"#F0A500"],[1,"#00C48C"]],
-                       line=dict(color="#0D1B2A", width=1))
-        ))
-        fig2.update_layout(
-            title=dict(text="🎯 Winrate por Setup",
-                      font=dict(size=13,color="#E8F4FD"),x=0),
-            paper_bgcolor="#0D1B2A", plot_bgcolor="#080C14",
-            font=dict(color="#5B8DB8",family="Inter"),
-            xaxis=dict(gridcolor="#1A2E42",linecolor="#1E3A5F",tickfont=dict(size=10)),
-            yaxis=dict(title="%",gridcolor="#1A2E42",linecolor="#1E3A5F"),
-            height=280, margin=dict(t=40,b=80,l=50,r=20), showlegend=False
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+        if "setup" in df.columns:
+            setup_stats = df.groupby("setup")["win"].agg(["sum","count"])
+            setup_stats["winrate"] = (setup_stats["sum"]/setup_stats["count"]*100).round(1)
+            setup_stats = setup_stats.reset_index()
+            fig2 = go.Figure(go.Bar(
+                x=setup_stats["setup"], y=setup_stats["winrate"],
+                marker=dict(color=setup_stats["winrate"],
+                           colorscale=[[0,"#FF4D6D"],[0.5,"#F0A500"],[1,"#00C48C"]],
+                           line=dict(color="#0D1B2A", width=1))
+            ))
+            fig2.update_layout(
+                title=dict(text="🎯 Winrate por Setup", font=dict(size=13,color="#E8F4FD"),x=0),
+                paper_bgcolor="#0D1B2A", plot_bgcolor="#080C14",
+                font=dict(color="#5B8DB8",family="Inter"),
+                xaxis=dict(gridcolor="#1A2E42",linecolor="#1E3A5F",tickfont=dict(size=10)),
+                yaxis=dict(title="%",gridcolor="#1A2E42",linecolor="#1E3A5F"),
+                height=280, margin=dict(t=40,b=80,l=50,r=20), showlegend=False
+            )
+            st.plotly_chart(fig2, use_container_width=True)
 
     with col_b:
-        sesion_stats = df.groupby("sesion")["win"].agg(["sum","count"])
-        sesion_stats["winrate"] = (sesion_stats["sum"]/sesion_stats["count"]*100).round(1)
-        sesion_stats = sesion_stats.reset_index()
-        fig3 = go.Figure(go.Bar(
-            x=sesion_stats["sesion"], y=sesion_stats["winrate"],
-            marker=dict(color=sesion_stats["winrate"],
-                       colorscale=[[0,"#FF4D6D"],[0.5,"#F0A500"],[1,"#00C48C"]],
-                       line=dict(color="#0D1B2A", width=1))
-        ))
-        fig3.update_layout(
-            title=dict(text="🕐 Winrate por Sesión",
-                      font=dict(size=13,color="#E8F4FD"),x=0),
-            paper_bgcolor="#0D1B2A", plot_bgcolor="#080C14",
-            font=dict(color="#5B8DB8",family="Inter"),
-            xaxis=dict(gridcolor="#1A2E42",linecolor="#1E3A5F",tickfont=dict(size=10)),
-            yaxis=dict(title="%",gridcolor="#1A2E42",linecolor="#1E3A5F"),
-            height=280, margin=dict(t=40,b=80,l=50,r=20), showlegend=False
-        )
-        st.plotly_chart(fig3, use_container_width=True)
+        if "sesion" in df.columns:
+            sesion_stats = df.groupby("sesion")["win"].agg(["sum","count"])
+            sesion_stats["winrate"] = (sesion_stats["sum"]/sesion_stats["count"]*100).round(1)
+            sesion_stats = sesion_stats.reset_index()
+            fig3 = go.Figure(go.Bar(
+                x=sesion_stats["sesion"], y=sesion_stats["winrate"],
+                marker=dict(color=sesion_stats["winrate"],
+                           colorscale=[[0,"#FF4D6D"],[0.5,"#F0A500"],[1,"#00C48C"]],
+                           line=dict(color="#0D1B2A", width=1))
+            ))
+            fig3.update_layout(
+                title=dict(text="🕐 Winrate por Sesión", font=dict(size=13,color="#E8F4FD"),x=0),
+                paper_bgcolor="#0D1B2A", plot_bgcolor="#080C14",
+                font=dict(color="#5B8DB8",family="Inter"),
+                xaxis=dict(gridcolor="#1A2E42",linecolor="#1E3A5F",tickfont=dict(size=10)),
+                yaxis=dict(title="%",gridcolor="#1A2E42",linecolor="#1E3A5F"),
+                height=280, margin=dict(t=40,b=80,l=50,r=20), showlegend=False
+            )
+            st.plotly_chart(fig3, use_container_width=True)
 
     col_c, col_d = st.columns(2)
     with col_c:
-        activo_stats = df.groupby("activo")["resultado_num"].sum().reset_index()
-        activo_stats = activo_stats[activo_stats["resultado_num"] != 0]
+        activo_stats = df.groupby("activo")["resultado"].sum().reset_index()
+        activo_stats = activo_stats[activo_stats["resultado"] != 0]
         if len(activo_stats) > 0:
             fig4 = go.Figure(go.Pie(
                 labels=activo_stats["activo"],
-                values=activo_stats["resultado_num"].abs(),
+                values=activo_stats["resultado"].abs(),
                 hole=0.55,
                 marker=dict(colors=["#4DA6FF","#00C48C","#F0A500"],
                            line=dict(color="#0D1B2A",width=2))
             ))
             fig4.update_layout(
-                title=dict(text="💰 Ganancia por Activo",
-                          font=dict(size=13,color="#E8F4FD"),x=0),
-                paper_bgcolor="#0D1B2A",
-                font=dict(color="#5B8DB8",family="Inter"),
+                title=dict(text="💰 Ganancia por Activo", font=dict(size=13,color="#E8F4FD"),x=0),
+                paper_bgcolor="#0D1B2A", font=dict(color="#5B8DB8",family="Inter"),
                 height=280, margin=dict(t=40,b=20,l=20,r=20),
                 legend=dict(font=dict(color="#C8D8E8"))
             )
             st.plotly_chart(fig4, use_container_width=True)
 
     with col_d:
-        emo_stats = df.groupby("emocional")["resultado_num"].mean().reset_index()
+        emo_stats = df.groupby("emocional")["resultado"].mean().reset_index()
         fig5 = go.Figure(go.Bar(
-            x=emo_stats["emocional"], y=emo_stats["resultado_num"],
-            marker=dict(color=emo_stats["resultado_num"],
+            x=emo_stats["emocional"], y=emo_stats["resultado"],
+            marker=dict(color=emo_stats["resultado"],
                        colorscale=[[0,"#FF4D6D"],[0.5,"#F0A500"],[1,"#00C48C"]],
                        line=dict(color="#0D1B2A",width=1))
         ))
         fig5.update_layout(
-            title=dict(text="🧠 Emoción vs Resultado",
-                      font=dict(size=13,color="#E8F4FD"),x=0),
+            title=dict(text="🧠 Emoción vs Resultado", font=dict(size=13,color="#E8F4FD"),x=0),
             paper_bgcolor="#0D1B2A", plot_bgcolor="#080C14",
             font=dict(color="#5B8DB8",family="Inter"),
             xaxis=dict(gridcolor="#1A2E42",linecolor="#1E3A5F",tickfont=dict(size=10)),
@@ -422,6 +390,7 @@ elif pagina == "📊 Dashboard":
         )
         st.plotly_chart(fig5, use_container_width=True)
 
+    # TABLA Y EXPORTACIÓN
     st.markdown("""
     <div style="background:#0D1B2A;border:1px solid #1E3A5F;border-radius:12px;
     padding:16px 20px;margin-bottom:8px;">
@@ -430,11 +399,23 @@ elif pagina == "📊 Dashboard":
     📋 Historial de Trades</div></div>
     """, unsafe_allow_html=True)
 
-    df_display = df[["fecha","activo","direccion","setup","sesion",
-                      "resultado","rr_obtenido","emocional"]].copy()
-    df_display.columns = ["Fecha","Activo","Dirección","Setup",
-                           "Sesión","Resultado $","R:R","Emoción"]
+    cols_mostrar = ["fecha","activo","direccion","setup","sesion","resultado","rr_obtenido","emocional"]
+    cols_disponibles = [c for c in cols_mostrar if c in df.columns]
+    df_display = df[cols_disponibles].copy()
+    df_display.columns = ["Fecha","Activo","Dirección","Setup","Sesión","Resultado $","R:R","Emoción"][:len(cols_disponibles)]
     st.dataframe(df_display, use_container_width=True, height=300)
+
+    # EXPORTAR EXCEL
+    import io
+    buffer = io.BytesIO()
+    df_display.to_excel(buffer, index=False, engine='openpyxl')
+    buffer.seek(0)
+    st.download_button(
+        label="📥 Descargar Track Record en Excel",
+        data=buffer,
+        file_name=f"track_record_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
 # ==================== BACKTESTING ====================
 elif pagina == "🔬 Backtesting":
