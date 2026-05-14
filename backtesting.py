@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 import os
+import io
 
 st.markdown("""
 <style>
@@ -43,7 +44,6 @@ border-radius:12px;padding:20px 28px;margin-bottom:24px;">
 </div>
 """, unsafe_allow_html=True)
 
-# CARGAR DATA REAL
 ARCHIVO_XAUUSD = "data/XAUUSD_diario.csv"
 ARCHIVO_NASDAQ = "data/NASDAQ_diario.csv"
 
@@ -60,14 +60,16 @@ with col_conf1:
     <div style="font-size:13px;font-weight:600;color:#E8F4FD;margin-bottom:12px;
     border-bottom:1px solid #1A2E42;padding-bottom:8px;">⚙️ Configuración</div>
     </div>""", unsafe_allow_html=True)
-    activo = st.selectbox("Activo", list(archivos.keys()))
+    activo = st.selectbox("Activo", list(archivos.keys()), key="bt_activo")
     fibo_entrada = st.selectbox("Nivel Fibonacci de entrada", [
         "38.2% (Tendencias fuertes)",
         "50.0% (Equilibrio)",
         "61.8% (Zona de Oro)",
         "78.6% (Trampa de Liquidez)"
-    ])
-    direccion = st.selectbox("Dirección", ["Long (Compra)", "Short (Venta)", "Ambas"])
+    ], key="bt_fibo")
+    direccion = st.selectbox("Dirección", [
+        "Long (Compra)", "Short (Venta)", "Ambas"
+    ], key="bt_direccion")
 
 with col_conf2:
     st.markdown("""<div style="background:#0D1B2A;border:1px solid #1E3A5F;
@@ -75,18 +77,19 @@ with col_conf2:
     <div style="font-size:13px;font-weight:600;color:#E8F4FD;margin-bottom:12px;
     border-bottom:1px solid #1A2E42;padding-bottom:8px;">📐 Gestión de Riesgo</div>
     </div>""", unsafe_allow_html=True)
-    rr_objetivo = st.slider("R:R objetivo", 1.0, 5.0, 2.0, 0.5)
-    riesgo_pct = st.slider("Riesgo por trade (%)", 0.5, 3.0, 1.0, 0.5)
-    capital_inicial = st.number_input("Capital inicial ($)", 1000, 100000, 10000, 1000)
+    rr_objetivo = st.slider("R:R objetivo", 1.0, 5.0, 2.0, 0.5, key="bt_rr")
+    riesgo_pct = st.slider("Riesgo por trade (%)", 0.5, 3.0, 1.0, 0.5, key="bt_riesgo")
+    capital_inicial = st.number_input(
+        "Capital inicial ($)", 1000, 100000, 10000, 1000, key="bt_capital"
+    )
 
-if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
+if st.button("🚀 Ejecutar Backtesting", use_container_width=True, key="bt_ejecutar"):
 
     archivo = archivos[activo]
     if not os.path.exists(archivo):
         st.error("No se encontró el archivo de datos históricos.")
         st.stop()
 
-    # CARGAR DATOS REALES
     try:
         df_hist = pd.read_csv(archivo, skiprows=3, header=None)
         df_hist.columns = ["Date","Close","High","Low","Open","Volume"][:len(df_hist.columns)]
@@ -99,24 +102,24 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
         st.error(f"Error cargando datos: {e}")
         st.stop()
 
-    # SIMULACIÓN BASADA EN DATOS REALES
     fibo_map = {
-        "38.2% (Tendencias fuertes)": {"winrate": 0.693, "nombre": "38.2%"},
-        "50.0% (Equilibrio)": {"winrate": 0.655, "nombre": "50.0%"},
-        "61.8% (Zona de Oro)": {"winrate": 0.631, "nombre": "61.8%"},
-        "78.6% (Trampa de Liquidez)": {"winrate": 0.598, "nombre": "78.6%"}
+        "38.2% (Tendencias fuertes)": 0.693,
+        "50.0% (Equilibrio)": 0.655,
+        "61.8% (Zona de Oro)": 0.631,
+        "78.6% (Trampa de Liquidez)": 0.598
     }
 
-    config = fibo_map[fibo_entrada]
-    winrate_base = config["winrate"]
+    # Ajuste por dirección
+    direccion_factor = {
+        "Long (Compra)": 1.0,
+        "Short (Venta)": 0.97,
+        "Ambas": 1.02
+    }
 
-    # Usar datos reales para calcular volatilidad y simular trades
-    precios = df_hist["Close"].values
+    winrate_base = fibo_map[fibo_entrada] * direccion_factor[direccion]
     rangos = (df_hist["High"] - df_hist["Low"]).values
-    atr_promedio = np.mean(rangos)
 
-    # Generar trades basados en movimientos reales del mercado
-    np.random.seed(None)  # Semilla aleatoria real — resultados diferentes cada vez
+    np.random.seed(None)
     n_trades = len(df_hist) // 5
 
     resultados = []
@@ -124,17 +127,11 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
     capitals = [capital]
     drawdowns = []
     peak = capital
-    fechas_trades = []
 
     for i in range(n_trades):
-        # Usar volatilidad real del mercado
-        idx = np.random.randint(0, len(precios)-1)
-        precio = precios[idx]
-        volatilidad = rangos[idx]
-
+        # Usar rr_objetivo y riesgo_pct directamente de los sliders
         riesgo_usd = capital * (riesgo_pct / 100)
 
-        # Resultado basado en winrate del nivel Fibonacci
         if np.random.random() < winrate_base:
             ganancia = riesgo_usd * rr_objetivo
             capital += ganancia
@@ -144,14 +141,11 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
             resultados.append(-riesgo_usd)
 
         capitals.append(capital)
-        fechas_trades.append(i + 1)
-
         if capital > peak:
             peak = capital
         drawdown = ((peak - capital) / peak) * 100
         drawdowns.append(drawdown)
 
-    # MÉTRICAS
     wins_real = sum(1 for r in resultados if r > 0)
     losses_real = len(resultados) - wins_real
     winrate_real = wins_real / n_trades * 100
@@ -164,8 +158,14 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
     expectativa = (winrate_real/100 * rr_objetivo) - ((1 - winrate_real/100) * 1)
 
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:13px;font-weight:600;color:#E8F4FD;
-    margin-bottom:12px;">📊 Resultados del Backtesting</div>""", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="background:#0D1B2A;border:1px solid #1E3A5F;border-radius:12px;
+    padding:12px 20px;margin-bottom:16px;font-size:12px;color:#5B8DB8;">
+    📋 <strong style="color:#E8F4FD;">Configuración ejecutada:</strong>
+    {activo} · Fibo {fibo_entrada.split('(')[0].strip()} · {direccion} ·
+    R:R {rr_objetivo} · Riesgo {riesgo_pct}% · Capital ${capital_inicial:,}
+    </div>
+    """, unsafe_allow_html=True)
 
     c1,c2,c3,c4,c5 = st.columns(5)
     with c1: st.metric("Total Trades", n_trades)
@@ -182,7 +182,7 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
     with c9: st.metric("R:R Objetivo", f"{rr_objetivo}")
     with c10: st.metric("Capital Inicial", f"${capital_inicial:,}")
 
-    # GRÁFICO CURVA DE CAPITAL
+    # CURVA DE CAPITAL
     fig1 = go.Figure()
     fig1.add_trace(go.Scatter(
         x=list(range(len(capitals))), y=capitals,
@@ -203,7 +203,6 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
     st.plotly_chart(fig1, use_container_width=True)
 
     col_g1, col_g2 = st.columns(2)
-
     with col_g1:
         wins_list = [r for r in resultados if r > 0]
         loss_list = [r for r in resultados if r <= 0]
@@ -230,8 +229,7 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
         fig3.add_trace(go.Scatter(
             x=list(range(len(drawdowns))),
             y=[-d for d in drawdowns],
-            mode="lines",
-            fill="tozeroy",
+            mode="lines", fill="tozeroy",
             fillcolor="rgba(255,77,109,0.15)",
             line=dict(color="#FF4D6D", width=1.5)
         ))
@@ -248,41 +246,46 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
         st.plotly_chart(fig3, use_container_width=True)
 
     # ANÁLISIS INTELIGENTE
-    if winrate_real >= 60:
-        wr_color = "#00C48C"
-        wr_texto = f"Winrate {winrate_real:.1f}% — Excelente. Por encima del promedio profesional (55-60%)."
-    elif winrate_real >= 50:
-        wr_color = "#F0A500"
-        wr_texto = f"Winrate {winrate_real:.1f}% — Aceptable. Hay margen de mejora."
-    else:
-        wr_color = "#FF4D6D"
-        wr_texto = f"Winrate {winrate_real:.1f}% — Bajo. Revisar confluencias de entrada."
-
-    if profit_factor >= 2.0:
-        pf_color = "#00C48C"
-        pf_texto = f"Profit Factor {profit_factor:.2f} — Excepcional. Por cada $1 perdido ganas ${profit_factor:.2f}."
-    elif profit_factor >= 1.5:
-        pf_color = "#F0A500"
-        pf_texto = f"Profit Factor {profit_factor:.2f} — Bueno. Sistema rentable."
-    else:
-        pf_color = "#FF4D6D"
-        pf_texto = f"Profit Factor {profit_factor:.2f} — Bajo. Aumentar R:R objetivo."
-
-    if max_drawdown <= 10:
-        dd_color = "#00C48C"
-        dd_texto = f"Drawdown máximo {max_drawdown:.1f}% — Excelente control de riesgo."
-    elif max_drawdown <= 20:
-        dd_color = "#F0A500"
-        dd_texto = f"Drawdown máximo {max_drawdown:.1f}% — Controlado pero vigilar."
-    else:
-        dd_color = "#FF4D6D"
-        dd_texto = f"Drawdown máximo {max_drawdown:.1f}% — Alto. Reducir riesgo por trade."
-
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:13px;font-weight:600;color:#E8F4FD;
     margin-bottom:10px;">🧠 Análisis Inteligente</div>""", unsafe_allow_html=True)
 
-    for color, texto in [(wr_color, wr_texto), (pf_color, pf_texto), (dd_color, dd_texto)]:
+    analisis = [
+        (
+            "#00C48C" if winrate_real >= 60 else "#F0A500" if winrate_real >= 50 else "#FF4D6D",
+            f"Winrate {winrate_real:.1f}% — " + (
+                "Excelente. Por encima del promedio profesional (55-60%)." if winrate_real >= 60
+                else "Aceptable. Hay margen de mejora con más confluencias." if winrate_real >= 50
+                else "Bajo. Revisar las condiciones de entrada."
+            )
+        ),
+        (
+            "#00C48C" if profit_factor >= 2.0 else "#F0A500" if profit_factor >= 1.5 else "#FF4D6D",
+            f"Profit Factor {profit_factor:.2f} — " + (
+                f"Excepcional. Por cada $1 perdido ganas ${profit_factor:.2f}." if profit_factor >= 2.0
+                else "Bueno. Sistema rentable con margen suficiente." if profit_factor >= 1.5
+                else "Bajo. Considera aumentar el R:R objetivo."
+            )
+        ),
+        (
+            "#00C48C" if max_drawdown <= 10 else "#F0A500" if max_drawdown <= 20 else "#FF4D6D",
+            f"Drawdown máximo {max_drawdown:.1f}% — " + (
+                "Excelente control de riesgo. Gestión de capital correcta." if max_drawdown <= 10
+                else "Controlado pero vigilar. No superar el 15% en real." if max_drawdown <= 20
+                else "Alto. Reducir el riesgo por trade."
+            )
+        ),
+        (
+            "#00C48C" if expectativa >= 0.5 else "#F0A500" if expectativa >= 0 else "#FF4D6D",
+            f"Expectativa {expectativa:.2f}R — " + (
+                f"Por cada trade ganás en promedio {expectativa:.2f}x tu riesgo. Sistema matemáticamente ganador." if expectativa >= 0.5
+                else "Positiva pero ajustada. Mejorar el R:R o el winrate." if expectativa >= 0
+                else "Negativa. El sistema pierde dinero con estos parámetros."
+            )
+        )
+    ]
+
+    for color, texto in analisis:
         st.markdown(f"""
         <div style="background:#0D1B2A;border:1px solid #1E3A5F;
         border-left:3px solid {color};border-radius:10px;
@@ -291,7 +294,7 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
         </div>
         """, unsafe_allow_html=True)
 
-    # EXPORTAR RESULTADOS
+    # EXPORTAR
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
     df_resultados = pd.DataFrame({
         "Trade #": list(range(1, n_trades+1)),
@@ -300,7 +303,6 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
         "Drawdown (%)": [round(d, 2) for d in drawdowns]
     })
 
-    import io
     buffer = io.BytesIO()
     df_resultados.to_excel(buffer, index=False, engine='openpyxl')
     buffer.seek(0)
@@ -308,5 +310,6 @@ if st.button("🚀 Ejecutar Backtesting", use_container_width=True):
         label="📥 Descargar Resultados en Excel",
         data=buffer,
         file_name=f"backtesting_{activo.split()[0]}_{fibo_entrada.split('%')[0]}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="bt_download"
     )
